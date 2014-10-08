@@ -28,16 +28,16 @@ use Net::FTP;
 
 # Config parameters.
 my $params = {
-	Debug => 1,
+    Debug => 1,
 
-	Host  => "items-uploads.archive.org",
-	User  => "user\@domain.tld",
-	Pass  => "password",
+    Host  => "items-uploads.archive.org",
+    User  => "user\@domain.tld",
+    Pass  => "password",
 
-	LogDir => "C:\\Data\\Log24",
-	Log    => basename($0) . ".log",
+    LogDir => "C:\\Data\\Log24",
+    Log    => basename($0) . ".log",
 
-	Threads => 8
+    Threads => 8
 };
 
 # Start all connections
@@ -51,36 +51,36 @@ my $queue = Thread::Queue->new();
 
 # Loop over Identifiers
 foreach ($ftp->ls(".")) {
-	my $dir = $_;
+    my $dir = $_;
 
-	$dir =~ m/ZFM-([0-9]{4})-([0-9]{2})-([0-9]{2})/x or next;
+    $dir =~ m/ZFM-([0-9]{4})-([0-9]{2})-([0-9]{2})/x or next;
 
-	# Derive dates from dirname
-	my ($year, $month, $day) = ($1, $2, $3);
+    # Derive dates from dirname
+    my ($year, $month, $day) = ($1, $2, $3);
 
-	logmsg("Scanning date: " . $dir);
+    logmsg("Scanning date: " . $dir);
 
-	# Fetch file list from FTP
-	my %list_remote = map {$_ => 1} $ftp->ls($dir);
+    # Fetch file list from FTP
+    my %list_remote = map {$_ => 1} $ftp->ls($dir);
 
-	# Fetch files from local dir
-	my @list_local = bsd_glob(
-		File::Spec->catfile(
-			$params->{LogDir}, "${year}-${month}-${day}_[0-9][0-9].MP3"
-		)
-	);
-	@list_local = map { basename($_) } @list_local;
+    # Fetch files from local dir
+    my @list_local = bsd_glob(
+        File::Spec->catfile(
+            $params->{LogDir}, "${year}-${month}-${day}_[0-9][0-9].MP3"
+        )
+    );
+    @list_local = map { basename($_) } @list_local;
 
-	logmsg("Files found: Remote " . scalar(keys %list_remote) . " Local " . scalar(@list_local));
+    logmsg("Files found: Remote " . scalar(keys %list_remote) . " Local " . scalar(@list_local));
 
-	# Delete remote files from TODO list
-	my @todo = grep { not $list_remote{$_} } @list_local;
+    # Delete remote files from TODO list
+    my @todo = grep { not $list_remote{$_} } @list_local;
 
-	logmsg("Files queued: " . scalar(@todo));
-	logmsg("::" . $_) foreach (@todo);
+    logmsg("Files queued: " . scalar(@todo));
+    logmsg("::" . $_) foreach (@todo);
 
-	# Add TODO list to queue
-	$queue->enqueue([$_, $dir . "/" . $_]) foreach (@todo);
+    # Add TODO list to queue
+    $queue->enqueue([$_, $dir . "/" . $_]) foreach (@todo);
 }
 
 $queue->end();
@@ -93,14 +93,14 @@ logmsg("#################################");
 
 # Launch threads to process our queue
 my @threads = map async {
-	while ( defined( $queue->peek ) ) {
-		my ($lfile, $rfile) = @{$queue->dequeue};
-		logmsg("Uploading file: " . $lfile);
+    while ( defined( $queue->peek ) ) {
+        my ($lfile, $rfile) = @{$queue->dequeue};
+        logmsg("Uploading file: " . $lfile);
 
-		$ftpconns[threads->tid() - 1]->put(
-			File::Spec->catfile($params->{LogDir}, $lfile), $rfile
-		) or logmsg("[WARN] " . $lfile . " failed: " . $ftp->message);
-	}
+        $ftpconns[threads->tid() - 1]->put(
+            File::Spec->catfile($params->{LogDir}, $lfile), $rfile
+        ) or logmsg("[WARN] " . $lfile . " failed: " . $ftp->message);
+    }
 }, 1 .. $params->{Threads};
 
 # Waiting to finish
@@ -113,27 +113,27 @@ exit(0);
 
 # Start connections for all threads
 sub ftpconnect {
-	my ($params) = @_;
+    my ($params) = @_;
 
-	my @connections = map {
-		# Connect to FTP server
-		my $ftp = Net::FTP->new(
-			$params->{Host},
-			Debug   => $params->{Debug},
-			Passive => 1
-		) or do {logmsg("[FATAL] " . $@) && die};
+    my @connections = map {
+        # Connect to FTP server
+        my $ftp = Net::FTP->new(
+            $params->{Host},
+            Debug   => $params->{Debug},
+            Passive => 1
+        ) or do {logmsg("[FATAL] " . $@) && die};
 
-		# Login to FTP server
-		$ftp->login(
-			$params->{User},
-			$params->{Pass}
-		) or do {logmsg("[FATAL] " . $ftp->message) && die};
+        # Login to FTP server
+        $ftp->login(
+            $params->{User},
+            $params->{Pass}
+        ) or do {logmsg("[FATAL] " . $ftp->message) && die};
 
-		# Return the FTP object
-		$ftp;
-	} 1 .. $params->{Threads};
+        # Return the FTP object
+        $ftp;
+    } 1 .. $params->{Threads};
 
-	return @connections;
+    return @connections;
 }
 
 # Logger subroutine
