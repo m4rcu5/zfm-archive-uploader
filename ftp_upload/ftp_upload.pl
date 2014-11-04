@@ -87,7 +87,7 @@ $queue->end();
 
 logmsg("#################################");
 logmsg("## Finished building queue");
-logmsg("## Enqueued files: " . $queue->pending());
+logmsg("## Enqueued files: "   . $queue->pending());
 logmsg("## Selected threads: " . $params->{Threads});
 logmsg("#################################");
 
@@ -95,11 +95,21 @@ logmsg("#################################");
 my @threads = map async {
     while ( defined( $queue->peek ) ) {
         my ($lfile, $rfile) = @{$queue->dequeue};
-        logmsg("Uploading file: " . $lfile);
 
-        $ftpconns[threads->tid() - 1]->put(
-            File::Spec->catfile($params->{LogDir}, $lfile), $rfile
-        ) or logmsg("[WARN] " . $lfile . " failed: " . $ftp->message);
+        my $try = 1;
+
+        ATTEMPT: {
+            logmsg("Uploading file: " . $lfile . " (try $try/3)");
+
+            $ftpconns[threads->tid() - 1]->put(
+                File::Spec->catfile($params->{LogDir}, $lfile), $rfile
+            ) or do {
+                if ($try < 4) {
+                    $try++ && redo ATTEMPT;
+                }
+                logmsg("[WARN] " . $lfile . " failed: " . $ftp->message);
+            }
+        }
     }
 }, 1 .. $params->{Threads};
 
@@ -121,13 +131,16 @@ sub ftpconnect {
             $params->{Host},
             Debug   => $params->{Debug},
             Passive => 1
-        ) or do {logmsg("[FATAL] " . $@) && die};
+        ) or do {logmsg("[FATAL] " . $@); die};
 
         # Login to FTP server
         $ftp->login(
             $params->{User},
             $params->{Pass}
-        ) or do {logmsg("[FATAL] " . $ftp->message) && die};
+        ) or do {logmsg("[FATAL] " . $ftp->message); die};
+
+        # All operations are binary
+        $ftp->binary;
 
         # Return the FTP object
         $ftp;
