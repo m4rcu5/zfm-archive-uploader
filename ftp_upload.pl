@@ -63,10 +63,15 @@ foreach ($ftp->ls(".")) {
     # Fetch file list from FTP
     my %list_remote = map {$_ => 1} $ftp->ls($dir);
 
+    # Create local directory path
+    my $ldir = File::Spec->catfile(
+        $params->{LogDir}, "${year}-${month}", "${day}"
+    );
+
     # Fetch files from local dir
     my @list_local = bsd_glob(
         File::Spec->catfile(
-            $params->{LogDir}, "${year}-${month}-${day}_[0-9][0-9].MP3"
+            $ldir, "[0-2][0-9]-[0-5][0-9]-[0-5][0-9].mp3"
         )
     );
     @list_local = map { basename($_) } @list_local;
@@ -80,16 +85,16 @@ foreach ($ftp->ls(".")) {
     logmsg("::" . $_) foreach (@todo);
 
     # Add TODO list to queue
-    $queue->enqueue([$_, $dir . "/" . $_]) foreach (@todo);
+    $queue->enqueue([File::Spec->catfile($ldir, $_), $dir . "/" . $_]) foreach (@todo);
 }
 
 $queue->end();
 
-logmsg("#################################");
-logmsg("## Finished building queue");
-logmsg("## Enqueued files: "   . $queue->pending());
-logmsg("## Selected threads: " . $params->{Threads});
-logmsg("#################################");
+logmsg("######################################################");
+logmsg("# Finished building queue");
+logmsg("# Enqueued files: "   . ($queue->pending() // "0"));
+logmsg("# Selected threads: " . $params->{Threads});
+logmsg("######################################################");
 
 # Launch threads to process our queue
 my @threads = map async {
@@ -99,12 +104,10 @@ my @threads = map async {
         my $try = 1;
 
         ATTEMPT: {
-            logmsg("Uploading file: " . $lfile . " (try $try/3)");
+            logmsg("Uploading file: " . basename($lfile) . " -> " . $rfile . " (try $try/3)");
 
-            $ftpconns[threads->tid() - 1]->put(
-                File::Spec->catfile($params->{LogDir}, $lfile), $rfile
-            ) or do {
-                if ($try < 4) {
+            $ftpconns[threads->tid() - 1]->put($lfile, $rfile) or do {
+                if ($try < 3) {
                     $try++ && redo ATTEMPT;
                 }
                 logmsg("[WARN] " . $lfile . " failed: " . $ftp->message);
@@ -118,6 +121,8 @@ $_->join() for @threads;
 
 # close our FTP connections
 $_->quit() for @ftpconns;
+
+logmsg("####################### DONE #########################");
 
 exit(0);
 
